@@ -1,0 +1,70 @@
+{
+  "name": "lazy-encrypt",
+  "version": "0.1.0",
+  "description": "Password-encrypt a lazily-loaded React route at build time with Vite. The plaintext source never ships — only an AES-GCM blob, decrypted in the browser after the correct password.",
+  "keywords": [
+    "vite",
+    "vite-plugin",
+    "react",
+    "encryption",
+    "aes-gcm",
+    "pbkdf2",
+    "lazy",
+    "code-splitting",
+    "webcrypto"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "react": ">=17",
+    "vite": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": false
+    },
+    "vite": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.1.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.3.5"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
