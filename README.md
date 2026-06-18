@@ -155,6 +155,57 @@ plugin injects it.
 
 ---
 
+## Bring your own login field — `useLazyEncrypt`
+
+For full control, skip the gate entirely and use the **`useLazyEncrypt` hook**.
+It owns no UI: you render and style your own login field anywhere in your
+component tree, manage its state however you like, and pass the password through
+`unlock(password)`. The hook handles the fetch, decrypt, import, and
+remembering.
+
+The plugin rewrites `useLazyEncrypt(() => import("X"))` exactly like the
+`lazyEncrypt` form, so the same one-line setup applies.
+
+```jsx
+import { useState } from "react";
+import { useLazyEncrypt } from "lazy-encrypt";
+
+function Secret() {
+  const { Component, locked, unlock, busy, error, clearError } =
+    useLazyEncrypt(() => import("./SecretPage.jsx"), { remember: "session" });
+  const [password, setPassword] = useState("");
+
+  if (!locked && Component) return <Component />;
+
+  return (
+    <form
+      className="my-own-login"
+      onSubmit={(e) => {
+        e.preventDefault();
+        unlock(password); // pass the password straight through
+      }}
+    >
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => {
+          setPassword(e.target.value);
+          clearError();
+        }}
+      />
+      <button disabled={busy}>{busy ? "…" : "Unlock"}</button>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
+```
+
+The hook returns `{ Component, locked, unlock, busy, error, clearError, isProd }`
+and accepts the non-UI options `encUrl` (injected — don't set it),
+`fetchOptions`, `onUnlocked`, and `remember`.
+
+---
+
 ## Remembering the password (optional)
 
 Add `remember` so visitors type the password **once** — it's reused
@@ -215,10 +266,10 @@ authenticated server instead.
 
 ## How it works
 
-In a production build the plugin finds each `lazyEncrypt(() => import("X"))`,
-bundles `X` on its own, encrypts it to `dist/<name>.enc`, and removes the
-plaintext from your main bundle. In the browser, `lazyEncrypt` fetches that
-`.enc`, derives a key from the password (PBKDF2-SHA256, 250k iterations),
+In a production build the plugin finds each `lazyEncrypt(() => import("X"))` (or
+`useLazyEncrypt(...)`), bundles `X` on its own, encrypts it to `dist/<name>.enc`,
+and removes the plaintext from your main bundle. In the browser, the runtime
+fetches that `.enc`, derives a key from the password (PBKDF2-SHA256, 250k iterations),
 decrypts it (AES-256-GCM), and renders the result. A wrong password fails the
 cipher's built-in authentication check, so it's rejected cleanly.
 

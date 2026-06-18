@@ -27,6 +27,7 @@ import {
   createElement,
   useCallback,
   useEffect,
+  useMemo,
   useState,
   type ComponentType,
   type ReactNode,
@@ -41,6 +42,60 @@ export { WrongPasswordError, MalformedBlobError };
 export type Loader<P = unknown> = () => Promise<{
   default: ComponentType<P>;
 }>;
+
+/**
+ * Subset of {@link LazyEncryptOptions} understood by {@link useLazyEncrypt}.
+ * The hook owns no UI, so the presentational options (title/prompt/button/
+ * className/gate) live only on the {@link lazyEncrypt} wrapper.
+ */
+export interface UseLazyEncryptOptions {
+  /**
+   * URL of the encrypted blob. Injected automatically by the Vite plugin in
+   * production builds; you normally never set this by hand.
+   */
+  encUrl?: string;
+  /** Extra options forwarded to `fetch()` when retrieving the blob. */
+  fetchOptions?: RequestInit;
+  /** Called once with the decrypted component after a successful unlock. */
+  onUnlocked?: () => void;
+  /**
+   * Remember the password so the visitor only types it once. After a successful
+   * unlock the password is saved in web storage and reused automatically on the
+   * next visit (or page reload), skipping the prompt.
+   *
+   *   "session" — kept until the browser tab is closed (sessionStorage).
+   *   "local"   — kept across tabs and restarts (localStorage).
+   *
+   * Default: off. The password is stored in plaintext in the browser; only
+   * enable this if that is acceptable for your threat model. A stored password
+   * that no longer works is cleared automatically.
+   */
+  remember?: "session" | "local";
+}
+
+/**
+ * What {@link useLazyEncrypt} returns. The frontend renders and styles its own
+ * login field, then passes the password through {@link unlock}.
+ */
+export interface LazyEncryptState<P = unknown> {
+  /**
+   * The decrypted component once unlocked, or `null` while still locked. Render
+   * it yourself: `Component ? <Component {...props} /> : <YourLoginField />`.
+   */
+  Component: ComponentType<P> | null;
+  /** True until the protected component has been unlocked. */
+  locked: boolean;
+  /** Attempt to unlock with `password`. Pass the value from your own field. */
+  unlock: (password: string) => void;
+  /** True while a decrypt/import is in flight. */
+  busy: boolean;
+  /** Human-readable error from the last failed attempt, or "". */
+  error: string;
+  /** Clear the current error (e.g. on field change). */
+  clearError: () => void;
+  /** False in dev mode (no ciphertext; any password unlocks). */
+  isProd: boolean;
+}
 
 /** Render-prop state handed to a custom `gate`. */
 export interface GateState {
@@ -58,12 +113,7 @@ export interface GateState {
   isProd: boolean;
 }
 
-export interface LazyEncryptOptions {
-  /**
-   * URL of the encrypted blob. Injected automatically by the Vite plugin in
-   * production builds; you normally never set this by hand.
-   */
-  encUrl?: string;
+export interface LazyEncryptOptions extends UseLazyEncryptOptions {
   /** Gate heading. Default: "Locked". */
   title?: ReactNode;
   /** Gate prompt text. */
@@ -72,28 +122,13 @@ export interface LazyEncryptOptions {
   buttonLabel?: ReactNode;
   /** Class name applied to the default gate's root `<section>`. */
   className?: string;
-  /** Extra options forwarded to `fetch()` when retrieving the blob. */
-  fetchOptions?: RequestInit;
-  /** Called once with the decrypted component after a successful unlock. */
-  onUnlocked?: () => void;
-  /**
-   * Remember the password so the visitor only types it once. After a successful
-   * unlock the password is saved in web storage and reused automatically on the
-   * next visit (or page reload), skipping the prompt.
-   *
-   *   "session" — kept until the browser tab is closed (sessionStorage).
-   *   "local"   — kept across tabs and restarts (localStorage).
-   *
-   * Default: off (the prompt shows every time). The password is stored in
-   * plaintext in the browser; only enable this if that is acceptable for your
-   * threat model. A stored password that no longer works is cleared
-   * automatically.
-   */
-  remember?: "session" | "local";
   /**
    * Fully replace the default gate UI. Receives the live {@link GateState} and
    * returns whatever you want to render before the protected component is
    * unlocked.
+   *
+   * For full control over field rendering and styling, prefer the
+   * {@link useLazyEncrypt} hook directly.
    */
   gate?: (state: GateState) => ReactNode;
 }
@@ -123,55 +158,66 @@ async function loadEncrypted<P>(
 }
 
 /**
- * Wrap a dynamic import in a password gate. Returns a component that renders the
- * gate until unlocked, then the decrypted (prod) or plaintext (dev) default
- * export of the target module.
+ * The login primitive. Drives the decrypt/import lifecycle but renders no UI —
+ * the frontend supplies and styles its own login field and passes the password
+ * through {@link LazyEncryptState.unlock}.
+ *
+ *   function Secret() {
+ *     const { Component, unlock, busy, error, locked } =
+ *       useLazyEncrypt(() => import("./secret-page"));
+ *     if (!locked && Component) return <Component />;
+ *     return (
+ *       <form onSubmit={(e) => { e.preventDefault(); unlock(pw); }}>
+ *         <input value={pw} onChange={(e) => setPw(e.target.value)} />
+ *         <button disabled={busy}>Unlock</button>
+ *         {error && <p>{error}</p>}
+ *       </form>
+ *     );
+ *   }
  */
-export function lazyEncrypt<P = Record<string, unknown>>(
+export function useLazyEncrypt<P = Record<string, unknown>>(
   loader: Loader<P> | null,
-  options: LazyEncryptOptions = {},
-): ComponentType<P> {
-  const {
-    encUrl,
-    title = "Locked",
-    prompt,
-    buttonLabel = "Unlock",
-    className = "lazy-encrypt-gate",
-    fetchOptions,
-    onUnlocked,
-    gate,
-    remember,
-  } = options;
+  options: UseLazyEncryptOptions = {},
+): LazyEncryptState<P> {
+  const { encUrl, fetchOptions, onUnlocked, remember } = options;
   const isProd = Boolean(encUrl);
+
+  const [Comp, setComp] = useState<ComponentType<P> | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   // Where (if anywhere) to persist the password. Keyed by encUrl so multiple
   // protected pages don't collide. All access is wrapped in try/catch because
   // web storage can throw (private mode, disabled cookies, SSR).
-  const store = remember === "local" ? "localStorage" : remember === "session" ? "sessionStorage" : null;
-  const storeKey = `lazy-encrypt:${encUrl ?? ""}`;
-  const recall = (): string | null => {
-    if (!store || !encUrl) return null;
-    try { return globalThis[store]?.getItem(storeKey) ?? null; } catch { return null; }
-  };
-  const persist = (pw: string) => {
-    if (!store || !encUrl) return;
-    try { globalThis[store]?.setItem(storeKey, pw); } catch { /* ignore */ }
-  };
-  const forget = () => {
-    if (!store) return;
-    try { globalThis[store]?.removeItem(storeKey); } catch { /* ignore */ }
-  };
+  const storage = useMemo(() => {
+    const store =
+      remember === "local"
+        ? "localStorage"
+        : remember === "session"
+          ? "sessionStorage"
+          : null;
+    const storeKey = `lazy-encrypt:${encUrl ?? ""}`;
+    return {
+      recall: (): string | null => {
+        if (!store || !encUrl) return null;
+        try { return globalThis[store]?.getItem(storeKey) ?? null; } catch { return null; }
+      },
+      persist: (pw: string) => {
+        if (!store || !encUrl) return;
+        try { globalThis[store]?.setItem(storeKey, pw); } catch { /* ignore */ }
+      },
+      forget: () => {
+        if (!store) return;
+        try { globalThis[store]?.removeItem(storeKey); } catch { /* ignore */ }
+      },
+    };
+  }, [remember, encUrl]);
 
-  return function LazyEncryptGate(props: P) {
-    const [Comp, setComp] = useState<ComponentType<P> | null>(null);
-    const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [busy, setBusy] = useState(false);
-
-    // `silent` suppresses the error UI for the auto-unlock attempt on mount, so
-    // a stale saved password just falls back to a clean prompt instead of a
-    // scary "Wrong password" on load.
-    const attempt = useCallback(async (pw: string, silent = false) => {
+  // `silent` suppresses the error UI for the auto-unlock attempt on mount, so a
+  // stale saved password just falls back to a clean field instead of a scary
+  // "Wrong password" on load.
+  const attempt = useCallback(
+    async (pw: string, silent = false) => {
       setBusy(true);
       if (!silent) setError("");
       try {
@@ -188,10 +234,10 @@ export function lazyEncrypt<P = Record<string, unknown>>(
           );
         }
         setComp(() => C);
-        persist(pw); // remember it for next time (no-op unless `remember` set)
+        storage.persist(pw); // remember it (no-op unless `remember` set)
         onUnlocked?.();
       } catch (e) {
-        forget(); // a saved password that failed is wrong/stale — drop it
+        storage.forget(); // a saved password that failed is wrong/stale — drop it
         if (silent) return;
         if (e instanceof SecretNotBuiltError) {
           setError("Encrypted bundle not built — run the production build.");
@@ -209,16 +255,59 @@ export function lazyEncrypt<P = Record<string, unknown>>(
       } finally {
         setBusy(false);
       }
-    }, []);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isProd, encUrl, fetchOptions, onUnlocked, loader, storage],
+  );
 
-    const unlock = useCallback(() => attempt(password), [attempt, password]);
+  const unlock = useCallback((password: string) => attempt(password), [attempt]);
+  const clearError = useCallback(() => setError(""), []);
 
-    // On mount, if a password was remembered, unlock automatically.
-    useEffect(() => {
-      const saved = recall();
-      if (saved) attempt(saved, true);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+  // On mount, if a password was remembered, unlock automatically.
+  useEffect(() => {
+    const saved = storage.recall();
+    if (saved) attempt(saved, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    Component: Comp,
+    locked: Comp === null,
+    unlock,
+    busy,
+    error,
+    clearError,
+    isProd,
+  };
+}
+
+/**
+ * Wrap a dynamic import in a password gate. Returns a component that renders the
+ * gate until unlocked, then the decrypted (prod) or plaintext (dev) default
+ * export of the target module.
+ *
+ * Built on {@link useLazyEncrypt}. For full control over how the login field is
+ * rendered and styled, call that hook directly instead.
+ */
+export function lazyEncrypt<P = Record<string, unknown>>(
+  loader: Loader<P> | null,
+  options: LazyEncryptOptions = {},
+): ComponentType<P> {
+  const {
+    title = "Locked",
+    prompt,
+    buttonLabel = "Unlock",
+    className = "lazy-encrypt-gate",
+    gate,
+    ...hookOptions
+  } = options;
+
+  return function LazyEncryptGate(props: P) {
+    const { Component: Comp, unlock, busy, error, clearError, isProd } =
+      useLazyEncrypt<P>(loader, hookOptions);
+    const [password, setPassword] = useState("");
+
+    const submit = useCallback(() => unlock(password), [unlock, password]);
 
     if (Comp) {
       return createElement(
@@ -229,7 +318,9 @@ export function lazyEncrypt<P = Record<string, unknown>>(
 
     if (gate) {
       return (
-        <>{gate({ password, setPassword, unlock, busy, error, isProd })}</>
+        <>
+          {gate({ password, setPassword, unlock: submit, busy, error, isProd })}
+        </>
       );
     }
 
@@ -250,14 +341,14 @@ export function lazyEncrypt<P = Record<string, unknown>>(
           autoComplete="off"
           onChange={(e) => {
             setPassword(e.target.value);
-            setError("");
+            clearError();
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") unlock();
+            if (e.key === "Enter") submit();
           }}
           disabled={busy}
         />
-        <button onClick={unlock} disabled={busy}>
+        <button onClick={submit} disabled={busy}>
           {busy ? "…" : buttonLabel}
         </button>
         {error && <p role="alert">{error}</p>}

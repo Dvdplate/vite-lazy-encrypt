@@ -6,6 +6,7 @@
  */
 export {
   lazyEncrypt,
+  useLazyEncrypt,
   SecretNotBuiltError,
   WrongPasswordError,
   MalformedBlobError,
@@ -13,5 +14,7 @@ export {
 export type {
   Loader,
   GateState,
+  LazyEncryptState,
   LazyEncryptOptions,
+  UseLazyEncryptOptions,
 } from "./runtime.js";

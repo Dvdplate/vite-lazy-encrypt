@@ -7,8 +7,9 @@
  *        - runs a nested, self-contained lib build (its own React bundled in),
  *        - encrypts the result with PBKDF2 -> AES-GCM (see ./crypto),
  *        - writes `<name>.enc` into the output dir,
- *        - rewrites the call to `lazyEncrypt(null, { encUrl: "/<name>.enc" })`
- *          so the plaintext target never enters the main bundle graph.
+ *        - rewrites the call to `<fn>(null, { encUrl: "/<name>.enc" })` (where
+ *          `<fn>` is `lazyEncrypt` or the `useLazyEncrypt` hook) so the
+ *          plaintext target never enters the main bundle graph.
  *   3. In dev it does nothing — the real `import("X")` is served as plaintext.
  *
  * The `.enc` blob is self-describing (the KDF iteration count is encoded in its
@@ -19,11 +20,13 @@ import { basename, extname, resolve } from "node:path";
 import { build, type Plugin, type PluginOption } from "vite";
 import { encrypt, DEFAULT_ITERATIONS } from "./crypto.js";
 
-// Matches `lazyEncrypt( () => import('X') )` with single/double/back quotes and
-// arbitrary inner whitespace. Intentionally conservative: only the no-arg arrow
-// + bare dynamic-import form (the documented usage) is rewritten.
+// Matches `lazyEncrypt( () => import('X') )` and the `useLazyEncrypt` hook form,
+// with single/double/back quotes and arbitrary inner whitespace. Intentionally
+// conservative: only the no-arg arrow + bare dynamic-import form (the documented
+// usage) is rewritten. Capture group 1 is the function name (preserved in the
+// rewrite), group 3 is the import specifier.
 const CALL_RE =
-  /lazyEncrypt\(\s*(?:async\s*)?\(\s*\)\s*=>\s*import\(\s*(['"`])([^'"`]+)\1\s*\)\s*\)/g;
+  /\b(lazyEncrypt|useLazyEncrypt)\(\s*(?:async\s*)?\(\s*\)\s*=>\s*import\(\s*(['"`])([^'"`]+)\2\s*\)\s*\)/g;
 
 const PROCESSABLE = /\.(?:[cm]?jsx?|tsx?)$/;
 
@@ -91,13 +94,13 @@ export function lazyEncryptPlugin(
     },
 
     async transform(code, id) {
-      if (!code.includes("lazyEncrypt(") || !PROCESSABLE.test(id)) return null;
+      if (!code.includes("azyEncrypt(") || !PROCESSABLE.test(id)) return null;
 
       CALL_RE.lastIndex = 0;
       let match: RegExpExecArray | null;
       const rewrites: Array<[string, string]> = [];
       while ((match = CALL_RE.exec(code))) {
-        const [whole, , spec] = match;
+        const [whole, fn, , spec] = match;
         const resolved = await this.resolve(spec, id);
         if (!resolved) continue;
         const encName = basename(spec, extname(spec)) + ".enc";
@@ -106,7 +109,7 @@ export function lazyEncryptPlugin(
           const encUrl = urlBase + encName;
           rewrites.push([
             whole,
-            `lazyEncrypt(null, { encUrl: ${JSON.stringify(encUrl)} })`,
+            `${fn}(null, { encUrl: ${JSON.stringify(encUrl)} })`,
           ]);
         }
       }
