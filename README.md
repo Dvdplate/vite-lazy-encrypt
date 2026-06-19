@@ -13,6 +13,8 @@ const Secret = lazyEncrypt(() => import("./SecretPage.jsx"));
 
 One line to protect a route, one Vite plugin to wire up the build.
 
+**▶ [Live demo](https://dvdplate.github.io/vite-lazy-encrypt/)** (password: `opensesame`) — source in [`example/`](example/).
+
 ---
 
 ## Usage

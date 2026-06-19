@@ -1,0 +1,153 @@
+:root {
+  --bg: #0f1117;
+  --panel: #171a23;
+  --border: #272b38;
+  --text: #e7e9ee;
+  --muted: #9aa1b1;
+  --accent: #7c9cff;
+  --accent-fg: #0f1117;
+  --danger: #ff6b6b;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 50% -10%, #1b2030, var(--bg));
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4rem 1.25rem 6rem;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 2.4rem;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  color: var(--muted);
+  margin: 0.5rem 0 1rem;
+}
+
+.links {
+  display: flex;
+  gap: 1rem;
+}
+
+.links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.links a:hover {
+  text-decoration: underline;
+}
+
+.hint {
+  margin: 2rem 0 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+code {
+  background: #0c0e14;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--accent);
+}
+
+.demo {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+footer p {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+/* lazy-encrypt's default gate (the <section className="lazy-encrypt-gate">). */
+.lazy-encrypt-gate h1 {
+  font-size: 1.3rem;
+  margin: 0 0 0.25rem;
+}
+
+.lazy-encrypt-gate p {
+  color: var(--muted);
+  margin: 0.25rem 0;
+}
+
+.lazy-encrypt-gate [role="note"] {
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.lazy-encrypt-gate [role="alert"] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.lazy-encrypt-gate input {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: #0c0e14;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.lazy-encrypt-gate input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.lazy-encrypt-gate button {
+  margin-top: 0.75rem;
+  padding: 0.55rem 1.2rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.lazy-encrypt-gate button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.secret h1 {
+  margin-top: 0;
+}
+
+.secret .codeword {
+  margin-top: 1.25rem;
+  padding: 0.75rem 1rem;
+  background: #0c0e14;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  font-family: ui-monospace, monospace;
+}
