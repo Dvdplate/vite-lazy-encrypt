@@ -1,18 +1,19 @@
 # lazy-encrypt
 
-Password-protect a page in your React app. The page's code is **encrypted at
-build time** and never ships as readable source — it's decrypted in the browser
-only after the visitor types the correct password.
+Password-protect any page in your **Vite + React** app — no backend required.
+At build time, `lazy-encrypt` encrypts the page's source into a ciphertext blob;
+readable JavaScript never ships to the browser. When a visitor arrives, they
+enter a password; WebCrypto decrypts the module on the spot and React renders
+the page.
 
-`lazyEncrypt` works exactly like `React.lazy`, so protecting a page is a one-line
-change.
+Use it exactly like `React.lazy`:
 
 ```jsx
 const Secret = lazyEncrypt(() => import("./SecretPage.jsx"));
 ```
 
-Built for **Vite + React**. Uses the browser's built-in WebCrypto (PBKDF2 →
-AES-256-GCM). No backend required.
+One line to protect a route, one Vite plugin to wire up the build. Powered by
+PBKDF2 key derivation and AES-256-GCM via the browser's built-in Web Crypto API.
 
 ---
 
