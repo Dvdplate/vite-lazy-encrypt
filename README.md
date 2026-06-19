@@ -1,19 +1,13 @@
 # lazy-encrypt
 
 Password-protect any page in your **Vite + React** app — no backend required.
-At build time, `lazy-encrypt` encrypts the page's source into a ciphertext blob;
-readable JavaScript never ships to the browser. When a visitor arrives, they
-enter a password; WebCrypto decrypts the module on the spot and React renders
-the page.
-
 Use it exactly like `React.lazy`:
 
 ```jsx
 const Secret = lazyEncrypt(() => import("./SecretPage.jsx"));
 ```
 
-One line to protect a route, one Vite plugin to wire up the build. Powered by
-PBKDF2 key derivation and AES-256-GCM via the browser's built-in Web Crypto API.
+One line to protect a route, one Vite plugin to wire up the build.
 
 ---
 
@@ -85,22 +79,22 @@ is required, but it works with one too:
 ```
 
 That's it. `<SecretPage />` renders a password box; on the correct password it
-swaps in the real page.
+swaps in the real page. For your own login UI instead of the default box, see
+[Bring your own login field](#bring-your-own-login-field--uselazyencrypt).
 
 ---
 
 ## Build & run
 
-**Development** — just run Vite. The page loads as plaintext so you can work on
-it normally. There's no real password in dev, so **any password unlocks** (the
-box says so).
+**Development** — run Vite as usual. The protected page is served as plaintext
+so you can edit it; any password unlocks.
 
 ```sh
 npm run dev
 ```
 
-**Production** — set the password as an environment variable named `SECRET_PW`
-and build. Anyone visiting the site needs this password to see the page.
+**Production** — set `SECRET_PW` and build. Visitors need that password to see
+the page.
 
 ```sh
 SECRET_PW='your-password' npm run build
@@ -110,80 +104,36 @@ SECRET_PW='your-password' npm run build
 > shipped files. (Do not rename it to start with `VITE_`, or Vite would leak it
 > into the client.)
 
-Serve the output like any static site and open the protected route:
+Serve the output like any static site:
 
 ```sh
 npx serve dist
 ```
 
-You should see a password box. Enter the password from your build → the page
-appears. Wrong password → "Wrong password", and the real code stays encrypted.
-
----
-
-## Customizing the password box (optional)
-
-Pass a second argument to style the default box or replace it entirely.
-
-```jsx
-// Tweak the text / class:
-const SecretPage = lazyEncrypt(() => import("./SecretPage.jsx"), {
-  title: "Members only",
-  prompt: "Enter your access code",
-  buttonLabel: "Enter",
-  className: "my-gate",
-});
-
-// Or render your own UI with the `gate` render-prop:
-const SecretPage = lazyEncrypt(() => import("./SecretPage.jsx"), {
-  gate: ({ password, setPassword, unlock, busy, error }) => (
-    <form onSubmit={(e) => { e.preventDefault(); unlock(); }}>
-      <input
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <button disabled={busy}>Unlock</button>
-      {error && <p>{error}</p>}
-    </form>
-  ),
-});
-```
-
-All options: `title`, `prompt`, `buttonLabel`, `className`, `gate`,
-`onUnlocked()`, `fetchOptions`, `remember`. Do **not** pass `encUrl` — the
-plugin injects it.
-
 ---
 
 ## Bring your own login field — `useLazyEncrypt`
 
-For full control, skip the gate entirely and use the **`useLazyEncrypt` hook**.
-It owns no UI: you render and style your own login field anywhere in your
-component tree, manage its state however you like, and pass the password through
-`unlock(password)`. The hook handles the fetch, decrypt, import, and
-remembering.
-
-The plugin rewrites `useLazyEncrypt(() => import("X"))` exactly like the
-`lazyEncrypt` form, so the same one-line setup applies.
+For your own login UI instead of the default box, use the **`useLazyEncrypt`**
+hook. It renders no UI — you supply the field and call `unlock(password)`.
 
 ```jsx
 import { useState } from "react";
 import { useLazyEncrypt } from "lazy-encrypt";
 
 function Secret() {
-  const { Component, locked, unlock, busy, error, clearError } =
-    useLazyEncrypt(() => import("./SecretPage.jsx"), { remember: "session" });
+  const { Component, unlock, busy, error, clearError } =
+    useLazyEncrypt(() => import("./SecretPage.jsx"));
   const [password, setPassword] = useState("");
 
-  if (!locked && Component) return <Component />;
+  if (Component) return <Component />;
 
   return (
     <form
       className="my-own-login"
       onSubmit={(e) => {
         e.preventDefault();
-        unlock(password); // pass the password straight through
+        unlock(password);
       }}
     >
       <input
@@ -201,35 +151,29 @@ function Secret() {
 }
 ```
 
-The hook returns `{ Component, locked, unlock, busy, error, clearError, isProd }`
-and accepts the non-UI options `encUrl` (injected — don't set it),
-`fetchOptions`, `onUnlocked`, and `remember`.
+The hook returns `{ Component, unlock, busy, error, clearError, isProd }`.
+`isProd` is `false` in dev (no ciphertext; any password unlocks).
 
----
+### Options
 
-## Remembering the password (optional)
+Pass a second argument to `lazyEncrypt` or `useLazyEncrypt`:
 
-Add `remember` so visitors type the password **once** — it's reused
-automatically on reloads and return visits, skipping the prompt.
+| option         | description |
+| -------------- | ----------- |
+| `remember`     | `"session"` or `"local"` — reuse the password after a successful unlock. Stored in plaintext in the browser; cleared automatically if it stops working. |
+| `onUnlocked`   | Callback after a successful unlock. |
+| `fetchOptions` | Extra options forwarded to `fetch()` when loading the `.enc` blob. |
+
+Do **not** pass `encUrl` — the Vite plugin injects it at build time.
 
 ```jsx
 const SecretPage = lazyEncrypt(() => import("./SecretPage.jsx"), {
-  remember: "local", // or "session"
+  remember: "local",
 });
 ```
 
-| value       | the password is kept…                                  |
-| ----------- | ------------------------------------------------------ |
-| `"session"` | until the browser tab is closed (`sessionStorage`)     |
-| `"local"`   | across tabs and restarts (`localStorage`)              |
-| *(omitted)* | not at all — the prompt shows every time (default)     |
-
-A remembered password that no longer works (e.g. you rebuilt with a new one) is
-cleared automatically, and the visitor just sees the prompt again.
-
-> **Note:** the password is stored in plaintext in the browser, so anyone with
-> access to that device can read it. Use `"session"` (or leave it off) if that
-> matters. To clear it yourself: `localStorage.removeItem("lazy-encrypt:" + encUrl)`.
+To clear a remembered password yourself:
+`localStorage.removeItem("lazy-encrypt:" + encUrl)`.
 
 ---
 
@@ -267,12 +211,12 @@ authenticated server instead.
 
 ## How it works
 
-In a production build the plugin finds each `lazyEncrypt(() => import("X"))` (or
-`useLazyEncrypt(...)`), bundles `X` on its own, encrypts it to `dist/<name>.enc`,
-and removes the plaintext from your main bundle. In the browser, the runtime
-fetches that `.enc`, derives a key from the password (PBKDF2-SHA256, 250k iterations),
-decrypts it (AES-256-GCM), and renders the result. A wrong password fails the
-cipher's built-in authentication check, so it's rejected cleanly.
+In a production build the plugin finds each `lazyEncrypt(() => import("X"))` or
+`useLazyEncrypt(() => import("X"))`, bundles `X` on its own, encrypts it to
+`dist/<name>.enc`, and removes the plaintext from your main bundle. In the
+browser, the runtime fetches that blob, derives a key from the password
+(PBKDF2-SHA256, 250k iterations), decrypts it (AES-256-GCM), and renders the
+result.
 
 ## License
 

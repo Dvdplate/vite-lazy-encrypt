@@ -173,4 +173,3 @@ export function lazyEncryptPlugin(
 }
 
 export default lazyEncryptPlugin;
-export type { LazyEncryptPluginOptions as PluginOptions };

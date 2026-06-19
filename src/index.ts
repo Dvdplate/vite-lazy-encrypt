@@ -13,8 +13,6 @@ export {
 } from "./runtime.js";
 export type {
   Loader,
-  GateState,
   LazyEncryptState,
-  LazyEncryptOptions,
   UseLazyEncryptOptions,
 } from "./runtime.js";

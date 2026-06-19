@@ -16,12 +16,6 @@
  *                       target into `<name>.enc`, and keeps the plaintext out of
  *                       the main bundle. Unlock fetches the `.enc` and decrypts
  *                       it in the browser with the user's password.
- *
- * THREAT MODEL — this is client-side encryption, NOT server authentication.
- * After a correct unlock the decrypted module lives in browser memory and is
- * recoverable via devtools. It protects only the shipped static bytes: the file
- * on disk is ciphertext and the password appears in no file. For real access
- * control, gate the encrypted bytes behind a server that checks auth first.
  */
 import {
   createElement,
@@ -30,7 +24,6 @@ import {
   useMemo,
   useState,
   type ComponentType,
-  type ReactNode,
 } from "react";
 import { decrypt, MalformedBlobError, WrongPasswordError } from "./crypto.js";
 
@@ -43,11 +36,7 @@ export type Loader<P = unknown> = () => Promise<{
   default: ComponentType<P>;
 }>;
 
-/**
- * Subset of {@link LazyEncryptOptions} understood by {@link useLazyEncrypt}.
- * The hook owns no UI, so the presentational options (title/prompt/button/
- * className/gate) live only on the {@link lazyEncrypt} wrapper.
- */
+/** Options for {@link useLazyEncrypt} and {@link lazyEncrypt}. */
 export interface UseLazyEncryptOptions {
   /**
    * URL of the encrypted blob. Injected automatically by the Vite plugin in
@@ -83,8 +72,6 @@ export interface LazyEncryptState<P = unknown> {
    * it yourself: `Component ? <Component {...props} /> : <YourLoginField />`.
    */
   Component: ComponentType<P> | null;
-  /** True until the protected component has been unlocked. */
-  locked: boolean;
   /** Attempt to unlock with `password`. Pass the value from your own field. */
   unlock: (password: string) => void;
   /** True while a decrypt/import is in flight. */
@@ -95,42 +82,6 @@ export interface LazyEncryptState<P = unknown> {
   clearError: () => void;
   /** False in dev mode (no ciphertext; any password unlocks). */
   isProd: boolean;
-}
-
-/** Render-prop state handed to a custom `gate`. */
-export interface GateState {
-  /** Current password input value. */
-  password: string;
-  /** Update the password input. */
-  setPassword: (value: string) => void;
-  /** Attempt to unlock with the current password. */
-  unlock: () => void;
-  /** True while a decrypt/import is in flight. */
-  busy: boolean;
-  /** Human-readable error from the last failed attempt, or "". */
-  error: string;
-  /** False in dev mode (no ciphertext; any password unlocks). */
-  isProd: boolean;
-}
-
-export interface LazyEncryptOptions extends UseLazyEncryptOptions {
-  /** Gate heading. Default: "Locked". */
-  title?: ReactNode;
-  /** Gate prompt text. */
-  prompt?: ReactNode;
-  /** Unlock button label. Default: "Unlock". */
-  buttonLabel?: ReactNode;
-  /** Class name applied to the default gate's root `<section>`. */
-  className?: string;
-  /**
-   * Fully replace the default gate UI. Receives the live {@link GateState} and
-   * returns whatever you want to render before the protected component is
-   * unlocked.
-   *
-   * For full control over field rendering and styling, prefer the
-   * {@link useLazyEncrypt} hook directly.
-   */
-  gate?: (state: GateState) => ReactNode;
 }
 
 async function loadEncrypted<P>(
@@ -163,9 +114,9 @@ async function loadEncrypted<P>(
  * through {@link LazyEncryptState.unlock}.
  *
  *   function Secret() {
- *     const { Component, unlock, busy, error, locked } =
+ *     const { Component, unlock, busy, error } =
  *       useLazyEncrypt(() => import("./secret-page"));
- *     if (!locked && Component) return <Component />;
+ *     if (Component) return <Component />;
  *     return (
  *       <form onSubmit={(e) => { e.preventDefault(); unlock(pw); }}>
  *         <input value={pw} onChange={(e) => setPw(e.target.value)} />
@@ -272,7 +223,6 @@ export function useLazyEncrypt<P = Record<string, unknown>>(
 
   return {
     Component: Comp,
-    locked: Comp === null,
     unlock,
     busy,
     error,
@@ -291,20 +241,11 @@ export function useLazyEncrypt<P = Record<string, unknown>>(
  */
 export function lazyEncrypt<P = Record<string, unknown>>(
   loader: Loader<P> | null,
-  options: LazyEncryptOptions = {},
+  options: UseLazyEncryptOptions = {},
 ): ComponentType<P> {
-  const {
-    title = "Locked",
-    prompt,
-    buttonLabel = "Unlock",
-    className = "lazy-encrypt-gate",
-    gate,
-    ...hookOptions
-  } = options;
-
   return function LazyEncryptGate(props: P) {
     const { Component: Comp, unlock, busy, error, clearError, isProd } =
-      useLazyEncrypt<P>(loader, hookOptions);
+      useLazyEncrypt<P>(loader, options);
     const [password, setPassword] = useState("");
 
     const submit = useCallback(() => unlock(password), [unlock, password]);
@@ -316,18 +257,10 @@ export function lazyEncrypt<P = Record<string, unknown>>(
       );
     }
 
-    if (gate) {
-      return (
-        <>
-          {gate({ password, setPassword, unlock: submit, busy, error, isProd })}
-        </>
-      );
-    }
-
     return (
-      <section className={className}>
-        <h1>{title}</h1>
-        <p>{prompt ?? "Enter the password to unlock the protected page."}</p>
+      <section className="lazy-encrypt-gate">
+        <h1>Locked</h1>
+        <p>Enter the password to unlock the protected page.</p>
         {!isProd && (
           <p role="note">
             Dev mode: serving plaintext; any password unlocks. Run a production
@@ -349,7 +282,7 @@ export function lazyEncrypt<P = Record<string, unknown>>(
           disabled={busy}
         />
         <button onClick={submit} disabled={busy}>
-          {busy ? "…" : buttonLabel}
+          {busy ? "…" : "Unlock"}
         </button>
         {error && <p role="alert">{error}</p>}
       </section>
