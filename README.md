@@ -1,5 +1,9 @@
 # lazy-encrypt
 
+[![npm version](https://img.shields.io/npm/v/lazy-encrypt.svg)](https://www.npmjs.com/package/lazy-encrypt)
+[![license](https://img.shields.io/npm/l/lazy-encrypt.svg)](./LICENSE)
+[![types](https://img.shields.io/npm/types/lazy-encrypt.svg)](./dist/index.d.ts)
+
 Password-protect any page in your **Vite + React** app — no backend required.
 Use it exactly like `React.lazy`:
 

@@ -14,6 +14,15 @@
     "webcrypto"
   ],
   "license": "MIT",
+  "author": "Cable Maharaj <cable.nathan.maharaj@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dvdplate/vite-lazy-encrypt.git"
+  },
+  "homepage": "https://github.com/Dvdplate/vite-lazy-encrypt#readme",
+  "bugs": {
+    "url": "https://github.com/Dvdplate/vite-lazy-encrypt/issues"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [
